@@ -1,0 +1,2 @@
+- Prisma seed in this repo can take long enough that the terminal tooling may interrupt `pnpm db:seed`; when that happens, run `node --env-file=.env --import tsx prisma/seed.ts` in an async terminal and wait for full completion.
+- `pnpm typecheck` and `pnpm build` are the reliable post-edit validations used in this workspace.

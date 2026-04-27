@@ -1,0 +1,369 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CurriculumNodeKind {
+  DOMAIN
+  MODULE
+  LESSON
+  CHECKPOINT
+}
+
+enum ContentBlockType {
+  INTRO
+  EXPLANATION
+  SCENARIO
+  KEY_POINTS
+  CONCEPT
+  MOVIE_CUE
+}
+
+enum ExerciseType {
+  SINGLE_CHOICE
+}
+
+enum StudySessionStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum StudyStepKey {
+  MISSION
+  LEARN
+  QUESTION
+  REVIEW
+}
+
+enum NodeProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model User {
+  id                  String            @id @default(cuid())
+  name                String?
+  email               String            @unique
+  emailVerified       DateTime?
+  image               String?
+  locale              String            @default("en")
+  passwordHash        String?
+  accounts            Account[]
+  sessions            Session[]
+  enrollments         Enrollment[]
+  studySessions       StudySession[]
+  nodeProgressRecords NodeProgress[]
+  exerciseAttempts    ExerciseAttempt[]
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model TrainingProgram {
+  id            String                  @id @default(cuid())
+  slug          String                  @unique
+  code          String                  @unique
+  family        String
+  vendor        String?
+  defaultLocale String
+  isActive      Boolean                 @default(true)
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  versions      ProgramVersion[]
+}
+
+model ProgramVersion {
+  id                 String                      @id @default(cuid())
+  trainingProgramId  String
+  versionCode        String
+  blueprintLabel     String
+  sourceRef          String?
+  isActive           Boolean                     @default(true)
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  trainingProgram    TrainingProgram             @relation(fields: [trainingProgramId], references: [id], onDelete: Cascade)
+  translations       ProgramVersionTranslation[]
+  nodes              CurriculumNode[]
+  enrollments        Enrollment[]
+  studySessions      StudySession[]
+
+  @@unique([trainingProgramId, versionCode])
+}
+
+model ProgramVersionTranslation {
+  id               String         @id @default(cuid())
+  programVersionId String
+  locale           String
+  title            String
+  description      String?        @db.Text
+  programVersion   ProgramVersion @relation(fields: [programVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([programVersionId, locale])
+}
+
+model CurriculumNode {
+  id                  String                      @id @default(cuid())
+  programVersionId    String
+  parentId            String?
+  kind                CurriculumNodeKind
+  code                String
+  slug                String
+  orderIndex          Int
+  estimatedMinutes    Int?
+  isPublished         Boolean                     @default(true)
+  metadata            Json?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  programVersion      ProgramVersion              @relation(fields: [programVersionId], references: [id], onDelete: Cascade)
+  parent              CurriculumNode?             @relation("CurriculumTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children            CurriculumNode[]            @relation("CurriculumTree")
+  translations        CurriculumNodeTranslation[]
+  contentBlocks       ContentBlock[]
+  exercises           Exercise[]
+  domainSessions      StudySession[]              @relation("SessionDomain")
+  lessonSessions      StudySession[]              @relation("SessionLesson")
+  checkpointSessions  StudySession[]              @relation("SessionCheckpoint")
+  nodeProgressRecords NodeProgress[]
+
+  @@unique([programVersionId, code])
+  @@unique([programVersionId, slug, kind])
+  @@index([programVersionId, parentId, orderIndex])
+}
+
+model CurriculumNodeTranslation {
+  id         String         @id @default(cuid())
+  nodeId     String
+  locale     String
+  title      String
+  shortTitle String?
+  summary    String?        @db.Text
+  objective  String?        @db.Text
+  keywords   Json?
+  node       CurriculumNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([nodeId, locale])
+}
+
+model ContentBlock {
+  id           String                  @id @default(cuid())
+  nodeId       String
+  type         ContentBlockType
+  orderIndex   Int
+  blockKey     String
+  node         CurriculumNode          @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  translations ContentBlockTranslation[]
+
+  @@unique([nodeId, blockKey])
+}
+
+model ContentBlockTranslation {
+  id             String       @id @default(cuid())
+  contentBlockId String
+  locale         String
+  title          String?
+  body           String       @db.Text
+  movieTitle     String?
+  movieCue       String?      @db.Text
+  contentBlock   ContentBlock @relation(fields: [contentBlockId], references: [id], onDelete: Cascade)
+
+  @@unique([contentBlockId, locale])
+}
+
+model Misconception {
+  id           String                     @id @default(cuid())
+  code         String                     @unique
+  category     String
+  createdAt    DateTime                   @default(now())
+  updatedAt    DateTime                   @updatedAt
+  translations MisconceptionTranslation[]
+  options      ExerciseOption[]
+}
+
+model MisconceptionTranslation {
+  id              String         @id @default(cuid())
+  misconceptionId String
+  locale          String
+  label           String
+  learnerFeedback String         @db.Text
+  misconception   Misconception  @relation(fields: [misconceptionId], references: [id], onDelete: Cascade)
+
+  @@unique([misconceptionId, locale])
+}
+
+model Exercise {
+  id               String                @id @default(cuid())
+  nodeId           String
+  code             String
+  orderIndex       Int
+  type             ExerciseType
+  estimatedSeconds Int?
+  difficulty       Int?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  node             CurriculumNode        @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  translations     ExerciseTranslation[]
+  options          ExerciseOption[]
+  attempts         ExerciseAttempt[]
+
+  @@unique([nodeId, code])
+}
+
+model ExerciseTranslation {
+  id               String   @id @default(cuid())
+  exerciseId       String
+  locale           String
+  prompt           String   @db.Text
+  supportText      String?  @db.Text
+  correctRationale String   @db.Text
+  remediationNote  String?  @db.Text
+  exercise         Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([exerciseId, locale])
+}
+
+model ExerciseOption {
+  id              String                     @id @default(cuid())
+  exerciseId      String
+  optionKey       String
+  orderIndex      Int
+  isCorrect       Boolean
+  misconceptionId String?
+  exercise        Exercise                   @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  misconception   Misconception?             @relation(fields: [misconceptionId], references: [id], onDelete: SetNull)
+  translations    ExerciseOptionTranslation[]
+  attempts        ExerciseAttempt[]          @relation("SelectedOption")
+
+  @@unique([exerciseId, optionKey])
+}
+
+model ExerciseOptionTranslation {
+  id             String         @id @default(cuid())
+  optionId       String
+  locale         String
+  text           String         @db.Text
+  optionFeedback String?        @db.Text
+  option         ExerciseOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([optionId, locale])
+}
+
+model Enrollment {
+  id               String         @id @default(cuid())
+  userId           String
+  programVersionId String
+  preferredLocale  String
+  startedAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  programVersion   ProgramVersion @relation(fields: [programVersionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, programVersionId])
+}
+
+model StudySession {
+  id                        String             @id @default(cuid())
+  userId                    String
+  programVersionId          String
+  domainNodeId              String
+  lessonNodeId              String
+  checkpointNodeId          String
+  locale                    String
+  status                    StudySessionStatus @default(ACTIVE)
+  currentStepKey            StudyStepKey       @default(MISSION)
+  sessionProgressPercent    Int                @default(0)
+  checkpointProgressPercent Int                @default(0)
+  resumePayload             Json?
+  contentVersion            String
+  startedAt                 DateTime           @default(now())
+  lastActivityAt            DateTime           @updatedAt
+  pausedAt                  DateTime?
+  completedAt               DateTime?
+  user                      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  programVersion            ProgramVersion     @relation(fields: [programVersionId], references: [id], onDelete: Cascade)
+  domainNode                CurriculumNode     @relation("SessionDomain", fields: [domainNodeId], references: [id], onDelete: Restrict)
+  lessonNode                CurriculumNode     @relation("SessionLesson", fields: [lessonNodeId], references: [id], onDelete: Restrict)
+  checkpointNode            CurriculumNode     @relation("SessionCheckpoint", fields: [checkpointNodeId], references: [id], onDelete: Restrict)
+  attempts                  ExerciseAttempt[]
+
+  @@index([userId, status, lastActivityAt])
+}
+
+model NodeProgress {
+  id                    String             @id @default(cuid())
+  userId                String
+  nodeId                String
+  status                NodeProgressStatus @default(NOT_STARTED)
+  masteryScore          Float              @default(0)
+  attemptCount          Int                @default(0)
+  correctCount          Int                @default(0)
+  lastStudiedAt         DateTime?
+  nextReviewAt          DateTime?
+  lastMisconceptionCode String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  user                  User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  node                  CurriculumNode     @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, nodeId])
+}
+
+model ExerciseAttempt {
+  id                  String         @id @default(cuid())
+  sessionId           String
+  userId              String
+  exerciseId          String
+  selectedOptionId    String
+  isCorrect           Boolean
+  score               Float          @default(0)
+  locale              String
+  elapsedSeconds      Int?
+  misconceptionCodes  Json?
+  feedbackSnapshot    Json?
+  createdAt           DateTime       @default(now())
+  session             StudySession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user                User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise            Exercise       @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  selectedOption      ExerciseOption @relation("SelectedOption", fields: [selectedOptionId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+}
